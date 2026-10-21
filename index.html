@@ -37,6 +37,7 @@ label{display:inline-flex;gap:6px;align-items:center}
   <button class="p" id="b3">3. Paiement test 0,01 Pi</button>
   <button id="b4">4. Fonctions natives</button>
   <button id="b5">5. Biométrie du navigateur</button>
+  <button class="p" id="b6">6. Explorer Wallet et SmartContract</button>
 </div>
 
 <div class="t"><h2>Résultats</h2><div id="res"></div></div>
@@ -101,6 +102,7 @@ $("b2").onclick = async () => {
 $("b3").onclick = () => {
   if (!window.Pi) return setR("Paiement", "ko", "Faites d'abord le test 1");
   setR("Paiement", "wa", "demande envoyée, voyez ci-dessous ce qui se passe");
+  (async () => { try { await window.Pi.authenticate(["username", "payments"], p => log("incomplet", p)); } catch (e) { log("auth avant paiement :", e && e.message || e); } })().then(() => {
   try {
     window.Pi.createPayment({ amount: 0.01, memo: "Test phase 0", metadata: { t: "phase0" } }, {
       onReadyForServerApproval: id => { log("onReadyForServerApproval", id); setR("Paiement", "ok", "la fenêtre de paiement s'est ouverte (id " + id + "). Sans serveur, il restera en attente : normal."); },
@@ -109,6 +111,7 @@ $("b3").onclick = () => {
       onError: (e, p) => { log("onError", e && e.message, p); setR("Paiement", "ko", e && e.message || "erreur"); }
     });
   } catch (e) { setR("Paiement", "ko", e.message || e); }
+  });
 };
 
 $("b4").onclick = async () => {
@@ -128,6 +131,22 @@ $("b5").onclick = async () => {
     } else out.push("test empreinte/visage : non supporté");
   } catch (e) { out.push("erreur : " + e.message); }
   setR("Biométrie navigateur", out.join("").includes("oui") ? "ok" : "wa", out.join(" ; "));
+};
+
+function desc(o) {
+  const out = {}, names = new Set(); let p = o;
+  while (p && p !== Object.prototype && p !== Function.prototype) { Object.getOwnPropertyNames(p).forEach(n => names.add(n)); p = Object.getPrototypeOf(p); }
+  names.forEach(n => { if (["caller", "callee", "arguments"].includes(n)) return; try { const v = o[n]; out[n] = typeof v === "function" ? "fn(" + v.length + ") " + String(v).replace(/\s+/g, " ").slice(0, 260) : typeof v; } catch (e) { out[n] = "err"; } });
+  return out;
+}
+$("b6").onclick = () => {
+  if (!window.Pi) return setR("Explorer", "ko", "Faites d'abord le test 1");
+  for (const k of ["Wallet", "SmartContract", "api"]) {
+    try { const d = desc(window.Pi[k]); log("=== Pi." + k + " ===", d); setR("Pi." + k, "ok", Object.keys(d).join(", ")); }
+    catch (e) { setR("Pi." + k, "ko", e.message || e); }
+  }
+  try { log("consentedScopes :", window.Pi.consentedScopes, "authenticated :", window.Pi.authenticated); } catch (e) {}
+  (async () => { try { log("getPiHostAppInfo :", await window.Pi.getPiHostAppInfo()); } catch (e) { log("getPiHostAppInfo erreur", e && e.message); } })();
 };
 
 $("copy").onclick = async () => {
