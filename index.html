@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Pi Phase 0</title>
+<style>
+:root{--bg:#faf8f4;--fg:#1d1b18;--mut:#6b655c;--card:#fff;--bd:#ddd6c9;--ok:#1a7f4b;--ko:#b3261e;--wa:#a15c00;--ac:#4b3a8f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17151a;--fg:#ece8f2;--mut:#a29cb0;--card:#211e27;--bd:#38333f;--ok:#58d08e;--ko:#ff8a80;--wa:#f0b35a;--ac:#b7a6ff}}
+:root[data-theme="dark"]{--bg:#17151a;--fg:#ece8f2;--mut:#a29cb0;--card:#211e27;--bd:#38333f;--ok:#58d08e;--ko:#ff8a80;--wa:#f0b35a;--ac:#b7a6ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.4rem;margin:.2em 0}
+p.s{color:var(--mut);margin:.2em 0 1em}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+button{font:inherit;padding:10px 14px;border-radius:8px;border:1px solid var(--ac);background:var(--card);color:var(--fg);cursor:pointer}
+button.p{background:var(--ac);color:var(--bg)}
+button:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.t{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin:10px 0}
+.t h2{font-size:1rem;margin:0 0 6px}
+.st{font-weight:600}.ok{color:var(--ok)}.ko{color:var(--ko)}.wa{color:var(--wa)}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:.8rem;max-height:340px;overflow:auto}
+label{display:inline-flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<main>
+<h1>Test Pi — étape 0</h1>
+<p class="s">À ouvrir dans Pi Browser. Lancez les tests dans l'ordre, puis copiez le rapport et collez-le dans la conversation.</p>
+
+<label><input type="checkbox" id="sbx" checked> Mode sandbox (Testnet)</label>
+
+<div class="row">
+  <button class="p" id="b1">1. Charger le SDK</button>
+  <button class="p" id="b2">2. Connexion Pi</button>
+  <button class="p" id="b3">3. Paiement test 0,01 Pi</button>
+  <button id="b4">4. Fonctions natives</button>
+  <button id="b5">5. Biométrie du navigateur</button>
+</div>
+
+<div class="t"><h2>Résultats</h2><div id="res"></div></div>
+
+<div class="row"><button class="p" id="copy">Copier le rapport</button></div>
+<pre id="log" aria-live="polite">Rapport vide.</pre>
+</main>
+<script>
+const R = {}, L = [];
+const $ = id => document.getElementById(id);
+const log = (...a) => { L.push(a.map(x => typeof x === "string" ? x : JSON.stringify(x, null, 1)).join(" ")); $("log").textContent = L.join("\n"); };
+const setR = (k, s, txt) => {
+  R[k] = { s, txt };
+  $("res").innerHTML = Object.entries(R).map(([k, v]) =>
+    `<div><span class="st ${v.s}">${v.s === "ok" ? "OK" : v.s === "ko" ? "ÉCHEC" : "À noter"}</span> — <b>${k}</b> : ${txt2(v.txt)}</div>`).join("");
+};
+const txt2 = t => String(t).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+const GREG = /G[A-Z2-7]{55}/g;
+
+log("Navigateur :", navigator.userAgent);
+log("Page :", location.href);
+
+function findAddr(o, path = "", out = []) {
+  if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) findAddr(v, path + "." + k, out);
+  else if (typeof o === "string" && (/wallet|address/i.test(path) || GREG.test(o))) out.push(path + " = " + o);
+  GREG.lastIndex = 0;
+  return out;
+}
+
+$("b1").onclick = () => {
+  if (window.Pi) return done1();
+  const s = document.createElement("script");
+  s.src = "https://sdk.minepi.com/pi-sdk.js";
+  s.onload = done1;
+  s.onerror = () => setR("SDK", "ko", "Script non chargé (bloqué ou hors Pi Browser)");
+  document.head.appendChild(s);
+};
+function done1() {
+  try {
+    window.Pi.init({ version: "2.0", sandbox: $("sbx").checked });
+    setR("SDK", "ok", "chargé et initialisé. Méthodes : " + Object.keys(window.Pi).join(", "));
+    log("Pi keys :", Object.keys(window.Pi));
+  } catch (e) { setR("SDK", "ko", e.message || e); }
+}
+
+$("b2").onclick = async () => {
+  if (!window.Pi) return setR("Connexion", "ko", "Faites d'abord le test 1");
+  const incomplete = p => { log("Paiement incomplet trouvé :", p); };
+  for (const scopes of [["username", "payments", "wallet_address"], ["username", "payments"]]) {
+    try {
+      const a = await window.Pi.authenticate(scopes, incomplete);
+      const safe = JSON.parse(JSON.stringify(a)); if (safe.accessToken) safe.accessToken = safe.accessToken.slice(0, 6) + "…(masqué)";
+      log("authenticate", scopes.join(","), "→", safe);
+      setR("Connexion " + scopes.join("+"), "ok", "utilisateur " + (a.user && a.user.username));
+      const f = findAddr(a);
+      setR("Adresse du portefeuille", f.length ? "ok" : "wa", f.length ? f.join(" | ") : "aucune adresse trouvée dans le résultat");
+      if (f.length) break;
+    } catch (e) { setR("Connexion " + scopes.join("+"), "ko", e && e.message ? e.message : JSON.stringify(e)); }
+  }
+};
+
+$("b3").onclick = () => {
+  if (!window.Pi) return setR("Paiement", "ko", "Faites d'abord le test 1");
+  setR("Paiement", "wa", "demande envoyée, voyez ci-dessous ce qui se passe");
+  try {
+    window.Pi.createPayment({ amount: 0.01, memo: "Test phase 0", metadata: { t: "phase0" } }, {
+      onReadyForServerApproval: id => { log("onReadyForServerApproval", id); setR("Paiement", "ok", "la fenêtre de paiement s'est ouverte (id " + id + "). Sans serveur, il restera en attente : normal."); },
+      onReadyForServerCompletion: (id, tx) => log("onReadyForServerCompletion", id, tx),
+      onCancel: id => { log("onCancel", id); setR("Paiement", "wa", "annulé"); },
+      onError: (e, p) => { log("onError", e && e.message, p); setR("Paiement", "ko", e && e.message || "erreur"); }
+    });
+  } catch (e) { setR("Paiement", "ko", e.message || e); }
+};
+
+$("b4").onclick = async () => {
+  if (!window.Pi) return setR("Fonctions natives", "ko", "Faites d'abord le test 1");
+  try { const f = await window.Pi.nativeFeaturesList(); setR("Fonctions natives", "ok", JSON.stringify(f)); }
+  catch (e) { setR("Fonctions natives", "ko", e.message || e); }
+};
+
+$("b5").onclick = async () => {
+  const out = [];
+  out.push("PublicKeyCredential : " + (window.PublicKeyCredential ? "oui" : "non"));
+  out.push("navigator.credentials : " + (navigator.credentials ? "oui" : "non"));
+  try {
+    if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      const v = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      out.push("empreinte/visage disponible : " + (v ? "oui" : "non"));
+    } else out.push("test empreinte/visage : non supporté");
+  } catch (e) { out.push("erreur : " + e.message); }
+  setR("Biométrie navigateur", out.join("").includes("oui") ? "ok" : "wa", out.join(" ; "));
+};
+
+$("copy").onclick = async () => {
+  const txt = "RAPPORT PHASE 0\n" + Object.entries(R).map(([k, v]) => `[${v.s}] ${k}: ${v.txt}`).join("\n") + "\n---\n" + L.join("\n");
+  try { await navigator.clipboard.writeText(txt); $("copy").textContent = "Copié"; }
+  catch { $("log").textContent = txt; $("copy").textContent = "Sélectionnez le texte ci-dessous"; }
+};
+</script>
+</body>
+</html>
