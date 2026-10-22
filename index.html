@@ -83,18 +83,23 @@ function done1() {
   } catch (e) { setR("SDK", "ko", e.message || e); }
 }
 
+const TO = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error("pas de réponse après " + ms / 1000 + " s")), ms))]);
+log("Dans un cadre (iframe) :", window.parent !== window, "| referrer :", document.referrer || "(vide)");
+
 $("b2").onclick = async () => {
   if (!window.Pi) return setR("Connexion", "ko", "Faites d'abord le test 1");
+  setR("Connexion", "wa", "demande envoyée, patientez jusqu'à 20 s (acceptez la fenêtre éventuelle)");
   const incomplete = p => { log("Paiement incomplet trouvé :", p); };
-  for (const scopes of [["username", "payments", "wallet_address"], ["username", "payments"]]) {
+  for (const scopes of [["username", "payments", "wallet_address"], ["username"]]) {
     try {
-      const a = await window.Pi.authenticate(scopes, incomplete);
+      const a = await TO(window.Pi.authenticate(scopes, incomplete), 20000);
       const safe = JSON.parse(JSON.stringify(a)); if (safe.accessToken) safe.accessToken = safe.accessToken.slice(0, 6) + "…(masqué)";
       log("authenticate", scopes.join(","), "→", safe);
       setR("Connexion " + scopes.join("+"), "ok", "utilisateur " + (a.user && a.user.username));
-      const f = findAddr(a);
-      setR("Adresse du portefeuille", f.length ? "ok" : "wa", f.length ? f.join(" | ") : "aucune adresse trouvée dans le résultat");
-      if (f.length) break;
+      let f = findAddr(a);
+      try { const w = await TO(window.Pi.Wallet.getUserWalletAddresses(), 15000); log("Wallet.getUserWalletAddresses →", w); f = f.concat(findAddr(w)); } catch (e) { log("getUserWalletAddresses :", e && e.message || e); }
+      setR("Adresse du portefeuille", f.length ? "ok" : "wa", f.length ? f.join(" | ") : "aucune adresse trouvée");
+      break;
     } catch (e) { setR("Connexion " + scopes.join("+"), "ko", e && e.message ? e.message : JSON.stringify(e)); }
   }
 };
@@ -102,7 +107,7 @@ $("b2").onclick = async () => {
 $("b3").onclick = () => {
   if (!window.Pi) return setR("Paiement", "ko", "Faites d'abord le test 1");
   setR("Paiement", "wa", "demande envoyée, voyez ci-dessous ce qui se passe");
-  (async () => { try { await window.Pi.authenticate(["username", "payments"], p => log("incomplet", p)); } catch (e) { log("auth avant paiement :", e && e.message || e); } })().then(() => {
+  (async () => { try { await TO(window.Pi.authenticate(["username", "payments"], p => log("incomplet", p)), 20000); } catch (e) { log("auth avant paiement :", e && e.message || e); } })().then(() => {
   try {
     window.Pi.createPayment({ amount: 0.01, memo: "Test phase 0", metadata: { t: "phase0" } }, {
       onReadyForServerApproval: id => { log("onReadyForServerApproval", id); setR("Paiement", "ok", "la fenêtre de paiement s'est ouverte (id " + id + "). Sans serveur, il restera en attente : normal."); },
@@ -145,7 +150,7 @@ $("b6").onclick = () => {
     try { const d = desc(window.Pi[k]); log("=== Pi." + k + " ===", d); setR("Pi." + k, "ok", Object.keys(d).join(", ")); }
     catch (e) { setR("Pi." + k, "ko", e.message || e); }
   }
-  try { log("consentedScopes :", window.Pi.consentedScopes, "authenticated :", window.Pi.authenticated); } catch (e) {}
+  try { log("api.backendURL :", window.Pi.api.backendURL, "| frontendURL :", window.Pi.api.frontendURL, "| sandbox détecté :", window.Pi.detectSandboxMode && window.Pi.detectSandboxMode()); log("consentedScopes :", window.Pi.consentedScopes, "authenticated :", window.Pi.authenticated); } catch (e) {}
   (async () => { try { log("getPiHostAppInfo :", await window.Pi.getPiHostAppInfo()); } catch (e) { log("getPiHostAppInfo erreur", e && e.message); } })();
 };
 
